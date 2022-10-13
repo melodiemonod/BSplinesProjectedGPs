@@ -15,11 +15,9 @@ library(ggrepel)
 
 indir ="~/git/BSplinesProjectedGPs/inst" # path to the repo
 outdir = file.path('/rds/general/user/mm3218/home/git/BSplinesProjectedGPs/inst', "results")
-# states = strsplit('CA,FL,NY,TX,PA,IL,OH,GA,NC,MI',',')[[1]]
-# states = strsplit('CA,FL,NY,TX,PA,IL,OH,GA,NC,MI',',')[[1]]
-states = strsplit('AK',',')[[1]]
+states <- 'CA'
 stan_model = "220209a"
-JOBID = 8004
+JOBID = 3541
 
 args_line <-  as.list(commandArgs(trailingOnly=TRUE))
 print(args_line)
@@ -115,9 +113,12 @@ age_contribution_continuous_table = make_var_by_age_by_state_by_time_table(fit_s
 plot_probability_deaths_age_contribution(age_contribution_continuous_table, 'phi', outdir = outdir.fig)
 age_contribution_discrete_table = make_var_by_age_by_state_by_time_table(fit_samples, df_week, df_age_reporting, df_state, 'phi_reduced', outdir.table)
 plot_probability_deaths_age_contribution(age_contribution_discrete_table, 'phi_reduced', outdir = outdir.fig, discrete = T)
-make_var_by_age_by_state_by_time_table(fit_samples, df_week, df_age_vaccination2, df_state, 'phi_reduced_vac', outdir.table)
-make_var_by_age_by_state_by_time_diff_table(fit_samples, df_week, df_age_vaccination2, df_state, 'phi_reduced_vac', vaccine_data_pop, outdir.table)
-make_var_by_age_by_state_by_time_diff_over_time_table(fit_samples, df_week, df_age_vaccination2, df_state, 'phi_reduced_vac', outdir.table)
+
+if('phi_reduced_vac' %in% names(fit_samples)){
+  make_var_by_age_by_state_by_time_table(fit_samples, df_week, df_age_vaccination2, df_state, 'phi_reduced_vac', outdir.table)
+  make_var_by_age_by_state_by_time_diff_table(fit_samples, df_week, df_age_vaccination2, df_state, 'phi_reduced_vac', vaccine_data_pop, outdir.table)
+  make_var_by_age_by_state_by_time_diff_over_time_table(fit_samples, df_week, df_age_vaccination2, df_state, 'phi_reduced_vac', outdir.table)
+}
 
 if('phi_predict_reduced_vac' %in% names(fit_samples)){
   make_var_by_age_by_state_by_time_table(fit_samples, df_week, df_age_vaccination2, df_state, 'phi_predict_reduced_vac', outdir.table)
@@ -154,8 +155,8 @@ mortality_rate_table_continuous = make_mortality_rate_table_continuous(fit_sampl
 plot_mortality_rate(mortality_rate_table, mortality_rate_table_continuous, outdir.fig)
 
 # predicted weekly deaths by various age groups
-deatht = make_weekly_death_rate_other_source(fit_samples, df_week, JHUData,  'alpha', df_age_continuous, outdir.table)
-tmp = make_weekly_death_rate_other_source(fit_samples, df_week, JHUData,  'alpha_reduced', df_age_reporting, outdir.table, withempirical = T)
+deatht = make_weekly_death_rate_other_source(fit_samples, df_week, JHUData,  'alpha', df_age_continuous, outdir.table, lab = 'prediction')
+tmp = make_weekly_death_rate_other_source(fit_samples, df_week, JHUData,  'alpha_reduced', df_age_reporting, outdir.table, withempirical = T, lab = 'prediction_agg')
 make_weekly_death_rate_other_source(fit_samples, df_week, JHUData,  'alpha', df_age_continuous, outdir.table,
                                     age_groups = c('0-54', '55-74', '75+'), lab = '3agegroups', withempirical = T)
 make_weekly_death_rate_other_source(fit_samples, df_week, JHUData,  'alpha', df_age_continuous, outdir.table,

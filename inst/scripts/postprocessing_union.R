@@ -15,18 +15,9 @@ library(ggrepel)
 
 indir ="~/git/BSplinesProjectedGPs/inst" # path to the repo
 outdir = file.path('/rds/general/user/mm3218/home/git/BSplinesProjectedGPs/inst', "results")
-# states = strsplit('FL',',')[[1]]
-# states = strsplit('CA,FL,NY,TX,PA,IL,OH,GA,NC,MI',',')[[1]]
-states = strsplit('CA,FL,NY,TX,PA,IL,OH,GA,NC,MI,NJ,VA,WA,AZ,MA,TN,IN,MD,MO,WI,CO,MN,SC,AL,LA,KY,OR,UT,IA,NV,AR,MS,KS,NM,NE,ID,WV,HI,NH,ME',',')[[1]]
-# states <- c("AK", "AL", "AR", "AZ", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME",
-#            "MI", "MN", "MO", "MS", "MT", "NC", "ND", "NE", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN",
-#            "TX", "UT", "VA", "VT", "WA", "WI", "WV", "WY")
-# states <- c("AK", "AL", "AR", "AZ", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", 
-#             "MI", "MN", "MO", "MS", "MT", "NC", "NE", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN",
-#             "TX", "UT", "VA", "VT", "WA", "WI", "WV", "WY")
-
+states <- 'CA'
 stan_model = "220209a"
-JOBID = 3821818
+JOBID = 3541
 
 args_line <-  as.list(commandArgs(trailingOnly=TRUE))
 print(args_line)
@@ -101,7 +92,9 @@ for(i in seq_along(locs)){
 }
 mortality_rate = do.call('rbind', mortality_rate)
 mortality_rate = subset(mortality_rate, date == max(mortality_rate$date)-7)
-plot_mortality_rate_continuous_all_states(mortality_rate, selected_codes, outdir.fig)
+if(all(selected_codes %in% mortality_rate[, unique(code)])){
+  plot_mortality_rate_continuous_all_states(mortality_rate, selected_codes, outdir.fig)
+}
 
 # mortality rate over time discrete
 mortality_rate = vector(mode = 'list', length = length(locs))
@@ -110,7 +103,6 @@ for(i in seq_along(locs)){
 }
 mortality_rate = do.call('rbindlist', list(l = mortality_rate, fill=TRUE))
 mortality_rate = subset(mortality_rate, date == max(mortality_rate$date)-7)
-# mortality_rate[is.na(M), M := c(2.056321e-03, 1.684421e-02)]
 crude_mortality_rate = find_crude_mortality_rate(mortality_rate, df_age_continuous, df_age_reporting, pop_data)
 plot_mortality_rate_all_states(mortality_rate, crude_mortality_rate, outdir.fig)
 plot_mortality_rate_all_states2(mortality_rate, outdir.fig)
@@ -159,8 +151,12 @@ for(i in seq_along(locs)){
 }
 death3 = do.call('rbind', death3)
 if(!'prop_vac_start_counterfactual' %in% names(stan_data)) resurgence_dates <- find_resurgence_dates(JHUData, deathByAge, locations$code)
-plot_mortality_all_states(subset(death3, code %in% selected_codes), resurgence_dates, 'selectedStates', outdir.fig)
-if(any(!locs %in% selected_codes))
+if(all(selected_codes %in% death3[, unique(code)])){
+  plot_mortality_all_states(subset(death3, code %in% selected_codes), resurgence_dates, 'selectedStates', outdir.fig)
+}else{
+  plot_mortality_all_states(death3, resurgence_dates, 'selectedStates', outdir.fig)
+}
+if(any(!locs %in% selected_codes & locs %in% selected_10_codes))
   plot_mortality_all_states(subset(death3, !code %in% selected_codes & code %in% selected_10_codes), resurgence_dates, 'otherStates', outdir.fig)
 if(length(locs) > 10){
   locs_not_selected = locs[!locs %in% selected_10_codes]
@@ -175,11 +171,12 @@ if(length(locs) > 10){
 # predictions
 predictions = vector(mode = 'list', length = length(locs))
 for(i in seq_along(locs)){
-  predictions[[i]] = readRDS(paste0(outdir.table, '-predictive_checks_table_', locs[i], '.rds'))
+  predictions[[i]] = readRDS(paste0(outdir.table, '-DeathByAge', 'Table_', 'prediction_agg', '_', locs[i], '.rds'))
 }
+
 predictions = do.call('rbind', predictions)
-predictions <- select(predictions, - min.sum.weekly.deaths, - max.sum.weekly.deaths, - sum.weekly.deaths, - weekly.deaths, - inside.CI, 
-                      -state_index, - week_index, - age_index)
+predictions <- select(predictions, - week_index, - state_index, - mean, - emp_JHU, -age_index, -emp, 
+                      -emp_adj)
 predictions <- predictions[order(loc_label, date, age)]
 
 dir = file.path(gsub('(.+)\\/results.*', '\\1', outdir.table), 'results', 'predictions')
@@ -189,82 +186,101 @@ saveRDS(predictions, file = file.path(dir, 'predicted_weekly_deaths.rds'))
 
 # 
 # Predicted contibution 
-contribution = vector(mode = 'list', length = length(locs))
-for(i in seq_along(locs)){
-  contribution[[i]] = readRDS(paste0(outdir.table, '-phi_predict_reduced_vacTable_', locs[i], '.rds'))
+file <- paste0(outdir.table, '-phi_predict_reduced_vacTable_', locs[1], '.rds')
+if(file.exists(file)){
+  contribution = vector(mode = 'list', length = length(locs))
+  for(i in seq_along(locs)){
+    contribution[[i]] = readRDS(paste0(outdir.table, '-phi_predict_reduced_vacTable_', locs[i], '.rds'))
+  }
+  contribution = do.call('rbind', contribution)
+  
+  mid_code = round(length(locs) / 2)
+  contribution[, M_median := median(M), by = c('date', 'age')]
+  plot_contribution_vaccine(contribution, vaccine_data_pop, 'predict_all', outdir.fig)
+  if(all(selected_codes %in% contribution[, unique(code)])){
+    plot_contribution_vaccine(subset(contribution, code %in% selected_codes), vaccine_data_pop,  'predict_selected_codes',outdir.fig)
+  }
+  
+  ## shift over time
+  locs_plus_US <- c(locs, 'US')
+  contributiondiff = vector(mode = 'list', length = length(locs_plus_US))
+  for(i in seq_along(locs_plus_US)){
+    contributiondiff[[i]] = readRDS(paste0(outdir.table, '-phi_predict_reduced_vacDiffTable_', locs_plus_US[i], '.rds'))
+  }
+  contributiondiff = do.call('rbind', contributiondiff)
+  plot_contributiondiff_map(contributiondiff, 'diff1', outdir.fig, 'predict')
+  plot_contributiondiff_map(contributiondiff, 'diff2', outdir.fig, 'predict')
+  save_statistics_contributiondiff(contributiondiff, outdir.table, 'predict')
 }
-contribution = do.call('rbind', contribution)
-
-mid_code = round(length(locs) / 2)
-contribution[, M_median := median(M), by = c('date', 'age')]
-plot_contribution_vaccine(contribution, vaccine_data_pop, 'predict_all', outdir.fig)
-plot_contribution_vaccine(subset(contribution, code %in% selected_codes), vaccine_data_pop,  'predict_selected_codes',outdir.fig)
-
-## shift over time
-locs_plus_US <- c(locs, 'US')
-contributiondiff = vector(mode = 'list', length = length(locs_plus_US))
-for(i in seq_along(locs_plus_US)){
-  contributiondiff[[i]] = readRDS(paste0(outdir.table, '-phi_predict_reduced_vacDiffTable_', locs_plus_US[i], '.rds'))
-}
-contributiondiff = do.call('rbind', contributiondiff)
-plot_contributiondiff_map(contributiondiff, 'diff1', outdir.fig, 'predict')
-plot_contributiondiff_map(contributiondiff, 'diff2', outdir.fig, 'predict')
-save_statistics_contributiondiff(contributiondiff, outdir.table, 'predict')
-
 
 # 
 # Estimated contibution 
-contribution = vector(mode = 'list', length = length(locs))
-for(i in seq_along(locs)){
-  contribution[[i]] = readRDS(paste0(outdir.table, '-phi_reduced_vacTable_', locs[i], '.rds'))
+file <- paste0(outdir.table, '-phi_reduced_vacTable_', locs[1], '.rds')
+if(file.exists(file)){
+  contribution = vector(mode = 'list', length = length(locs))
+  for(i in seq_along(locs)){
+    contribution[[i]] = readRDS(paste0(outdir.table, '-phi_reduced_vacTable_', locs[i], '.rds'))
+  }
+  contribution = do.call('rbind', contribution)
+  contribution[, M_median := median(M), by = c('date', 'age')]
+  mid_code = round(length(locs) / 2)
+  plot_contribution_vaccine(contribution, vaccine_data_pop, 'all', outdir.fig)
+  if(all(selected_codes %in% contribution[, unique(code)])){
+    plot_contribution_vaccine(subset(contribution, code %in% selected_codes), vaccine_data_pop,  'selected_codes',outdir.fig)
+  }else{
+    plot_contribution_vaccine(contribution, vaccine_data_pop,  'selected_codes',outdir.fig)
+  }
+  if(all(c('TX', 'NH') %in% locs)) plot_contribution_vaccine(subset(contribution, code %in% c('TX', 'NH')), vaccine_data_pop,  'TXNH',outdir.fig)
+  
+  ## shift over time
+  locs_plus_US <- c(locs, 'US')
+  contributiondiff = vector(mode = 'list', length = length(locs_plus_US))
+  for(i in seq_along(locs_plus_US)){
+    contributiondiff[[i]] = readRDS(paste0(outdir.table, '-phi_reduced_vacDiffTable_', locs_plus_US[i], '.rds'))
+  }
+  contributiondiff = do.call('rbind', contributiondiff)
+  plot_contributiondiff_map(contributiondiff, 'diff1', outdir.fig)
+  plot_contributiondiff_map(contributiondiff, 'diff2', outdir.fig)
+  save_statistics_contributiondiff(contributiondiff, outdir.table)
 }
-contribution = do.call('rbind', contribution)
-contribution[, M_median := median(M), by = c('date', 'age')]
-mid_code = round(length(locs) / 2)
-plot_contribution_vaccine(contribution, vaccine_data_pop, 'all', outdir.fig)
-plot_contribution_vaccine(subset(contribution, code %in% selected_codes), vaccine_data_pop,  'selected_codes',outdir.fig)
-if(all(c('TX', 'NH') %in% locs)) plot_contribution_vaccine(subset(contribution, code %in% c('TX', 'NH')), vaccine_data_pop,  'TXNH',outdir.fig)
-
-## shift over time
-locs_plus_US <- c(locs, 'US')
-contributiondiff = vector(mode = 'list', length = length(locs_plus_US))
-for(i in seq_along(locs_plus_US)){
-  contributiondiff[[i]] = readRDS(paste0(outdir.table, '-phi_reduced_vacDiffTable_', locs_plus_US[i], '.rds'))
-}
-contributiondiff = do.call('rbind', contributiondiff)
-plot_contributiondiff_map(contributiondiff, 'diff1', outdir.fig)
-plot_contributiondiff_map(contributiondiff, 'diff2', outdir.fig)
-save_statistics_contributiondiff(contributiondiff, outdir.table)
 
 
 #
 # Resurgence during the summer 2021
-r_pdeaths  = vector(mode = 'list', length = length(locs))
-for(i in seq_along(locs)){
-  r_pdeaths[[i]] = readRDS(paste0(outdir.table, '-r_pdeathsTable_', locs[i], '.rds'))
-}
-r_pdeaths = do.call('rbind', r_pdeaths)
-
-p4 <- plot_relative_resurgence_vaccine2(r_pdeaths, F, outdir.fig, '_selected_states', selected_codes)
-
-if(all(selected_10_codes %in% locs)){
-  plot_relative_resurgence_vaccine2_long(r_pdeaths, outdir.fig, '_10_states', selected_10_codes)
-  plot_relative_resurgence_vaccine2_long(r_pdeaths, outdir.fig, '_other_states', locs[!locs %in% selected_10_codes])
+file <- paste0(outdir.table, '-r_pdeathsTable_', locs[1], '.rds')
+if(file.exists(file)){
+  r_pdeaths  = vector(mode = 'list', length = length(locs))
+  for(i in seq_along(locs)){
+    r_pdeaths[[i]] = readRDS(paste0(outdir.table, '-r_pdeathsTable_', locs[i], '.rds'))
+  }
+  r_pdeaths = do.call('rbind', r_pdeaths)
   
-  p_all <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, T, outdir.fig, '_all_states')
-  plot_relative_resurgence_vaccine_panel(p4, p_all, '50_log', outdir.fig)
-  p_all2 <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, T, outdir.fig, '_10_states', selected_10_codes)
-  plot_relative_resurgence_vaccine_panel(p4, p_all2, '10_log', outdir.fig)
-  p_all2 <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, T, outdir.fig, '_15_states', selected_15_codes)
-  plot_relative_resurgence_vaccine_panel(p4, p_all2, '15_log', outdir.fig)
-  p_all2 <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, T, outdir.fig, '_20_states', selected_20_codes)
-  plot_relative_resurgence_vaccine_panel(p4, p_all2, '20_log', outdir.fig)
-  p_all2 <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, T, outdir.fig, '_30_states', selected_30_codes)
-  plot_relative_resurgence_vaccine_panel(p4, p_all2, '30_log', outdir.fig)
-  p_all2 <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, F, outdir.fig, '_30_states', selected_30_codes)
-  plot_relative_resurgence_vaccine_panel(p4, p_all2, '30', outdir.fig)
+  if(all(selected_codes %in% r_pdeaths[, unique(code)])){
+    p4 <- plot_relative_resurgence_vaccine2(r_pdeaths, F, outdir.fig, '_selected_states', selected_codes)
+  }else{
+    p4 <- plot_relative_resurgence_vaccine2(r_pdeaths, F, outdir.fig, '_selected_states', r_pdeaths[, unique(code)])
+  }
   
+  if(all(selected_10_codes %in% locs)){
+    plot_relative_resurgence_vaccine2_long(r_pdeaths, outdir.fig, '_10_states', selected_10_codes)
+    plot_relative_resurgence_vaccine2_long(r_pdeaths, outdir.fig, '_other_states', locs[!locs %in% selected_10_codes])
+    
+    p_all <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, T, outdir.fig, '_all_states')
+    plot_relative_resurgence_vaccine_panel(p4, p_all, '50_log', outdir.fig)
+    p_all2 <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, T, outdir.fig, '_10_states', selected_10_codes)
+    plot_relative_resurgence_vaccine_panel(p4, p_all2, '10_log', outdir.fig)
+    p_all2 <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, T, outdir.fig, '_15_states', selected_15_codes)
+    plot_relative_resurgence_vaccine_panel(p4, p_all2, '15_log', outdir.fig)
+    p_all2 <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, T, outdir.fig, '_20_states', selected_20_codes)
+    plot_relative_resurgence_vaccine_panel(p4, p_all2, '20_log', outdir.fig)
+    p_all2 <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, T, outdir.fig, '_30_states', selected_30_codes)
+    plot_relative_resurgence_vaccine_panel(p4, p_all2, '30_log', outdir.fig)
+    p_all2 <- plot_relative_resurgence_vaccine_end_3(r_pdeaths, F, outdir.fig, '_30_states', selected_30_codes)
+    plot_relative_resurgence_vaccine_panel(p4, p_all2, '30', outdir.fig)
+    
+  }
 }
+
 
 cat("\n End postprocessing_union.R \n")
 

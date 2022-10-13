@@ -20,11 +20,9 @@ if(0){
 }
 indir = "/rds/general/user/mm3218/home/git/BSplinesProjectedGPs/inst/" # path to the repo
 outdir = '/rds/general/user/mm3218/home/git/BSplinesProjectedGPs/inst/results/'
-# states = strsplit('CA,FL,NY,TX,PA,IL,OH,GA,NC,MI',',')[[1]]
-states = strsplit('CA,FL,NY,TX',',')[[1]]
-states = strsplit('FL',',')[[1]]
-stan_model = "cmdstan_220616a"
-JOBID = 9228
+states <- 'CA'
+stan_model = "220209a"
+JOBID = 3541
 
 args_line <-  as.list(commandArgs(trailingOnly=TRUE))
 print(args_line)
